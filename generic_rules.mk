@@ -123,19 +123,19 @@ endif
 
 
 %.bam.featurecounts.count: $(REFERENCE_FEATURECOUNTS_GTF) %.bam
-	featureCounts -o $@ -a $< $(FEATURECOUNTS_PARAM) --tmpDir $(TMP_DIR) -T $(NCPUS) $^2
+	featureCounts -o $@ -a $< $(FEATURECOUNTS_PARAM) --tmpDir $(TMP_DIR) -T $(NCPUS) $(word 2,$^)
 
 %.read_distribution.txt: %.bam $(REFERENCE_RSEQC_HOUSEKEEPING_BED)
-	read_distribution.py  -i $< -r $^2 > $@
+	read_distribution.py  -i $< -r $(word 2,$^) > $@
 
 %.junctionSaturation_plot.r: %.bam $(REFERENCE_RSEQC_HOUSEKEEPING_BED)
-	junction_saturation.py -i $< -r $^2 -o rseqc/$*
+	junction_saturation.py -i $< -r $(word 2,$^) -o rseqc/$*
 
 %.read_duplication.xls: %.bam %.bam.bai
 	read_duplication.py -i $< -o $*
 
 %.geneBodyCoverage.txt: %.bam $(GENCODE_DIR)/rseqc.HouseKeepingGenes.bed.gz %.bam.bai
-	docker run -u `id -u`:`id -g` --rm -v $(DOCKER_DATA_DIR):$(DOCKER_DATA_DIR) -v $(SCRATCH):$(SCRATCH) quay.io/biocontainers/rseqc:4.0.0--py38h0213d0e_0  bash -c "cd $(PWD); geneBody_coverage.py -i $< -r <(zcat $^2) -o rseqc/$*"
+	docker run -u `id -u`:`id -g` --rm -v $(DOCKER_DATA_DIR):$(DOCKER_DATA_DIR) -v $(SCRATCH):$(SCRATCH) quay.io/biocontainers/rseqc:4.0.0--py38h0213d0e_0  bash -c "cd $(PWD); geneBody_coverage.py -i $< -r <(zcat $(word 2,$^)) -o rseqc/$*"
 	sed -i 's|Aligned.sortedByCoord.out|$*|' $@
 
 rseqc/%.inner_distance.txt: STAR/%.STAR/Aligned.sortedByCoord.out.bam
@@ -143,7 +143,7 @@ rseqc/%.inner_distance.txt: STAR/%.STAR/Aligned.sortedByCoord.out.bam
 	inner_distance.py -i $< -o rseqc/$* -r $(RSEQC_REF_BED
 
 %.ribo.ex.bam: %.bam $(RIBOSOMAL_BED_FILE) %.bam.bai
-	docker run -u `id -u`:`id -g` --rm -v $(DOCKER_DATA_DIR):$(DOCKER_DATA_DIR) -v $(SCRATCH):$(SCRATCH) quay.io/biocontainers/rseqc:4.0.0--py38h0213d0e_0  bash -c "cd $(PWD); split_bam.py -i $<  -r $^2 -o $*.ribo > $@.summary"
+	docker run -u `id -u`:`id -g` --rm -v $(DOCKER_DATA_DIR):$(DOCKER_DATA_DIR) -v $(SCRATCH):$(SCRATCH) quay.io/biocontainers/rseqc:4.0.0--py38h0213d0e_0  bash -c "cd $(PWD); split_bam.py -i $<  -r $(word 2,$^) -o $*.ribo > $@.summary"
 %.ribo.in.bam: %.ribo.ex.bam
 	@echo done
 %.ribo.ex.bam.summary: %.ribo.ex.bam
