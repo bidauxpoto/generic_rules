@@ -4,6 +4,7 @@ NGS_LIBRARY_PROPERTY_STRANDED ?= __NGS_LIBRARY_PROPERTY_STRANDED
 # 0 -> unstranded
 
 NGS_LIBRARY_PROPERTY_PAIRED ?= N
+# Y|N
 
 ######################
 #
@@ -12,7 +13,7 @@ NGS_LIBRARY_PROPERTY_PAIRED ?= N
 
 SCRATCH?=__SCRATCH__
 TMP_DIR?=$(SCRATCH)/tmp/
-CORES?=8
+NCPUS?=8
 
 ######################
 #
@@ -74,29 +75,32 @@ BIGWIG_BIN_SIZE?=10
 	bedtools bamtobed -splitD < $< | bsort -k1,1V -k2,2n > $@
   
 %.$(BIGWIG_BIN_SIZE).bw: %.bam %.bam.bai
-	bamCoverage --binSize=$(BIGWIG_BIN_SIZE) -b $< -o $@ --numberOfProcessors=$(CORES)
+	bamCoverage --binSize=$(BIGWIG_BIN_SIZE) -b $< -o $@ --numberOfProcessors=$(NCPUS)
 %.bw: %.bam %.bam.bai
-	bamCoverage --binSize=$(BIGWIG_BIN_SIZE) -b $< -o $@ --numberOfProcessors=$(CORES)
+	bamCoverage --binSize=$(BIGWIG_BIN_SIZE) -b $< -o $@ --numberOfProcessors=$(NCPUS)
 %.norm.$(BIGWIG_BIN_SIZE).bw: %.bam %.bam.bai
-	bamCoverage --binSize=$(BIGWIG_BIN_SIZE) --normalizeUsing=CPM -b $< -o $@ --numberOfProcessors=$(CORES)
+	bamCoverage --binSize=$(BIGWIG_BIN_SIZE) --normalizeUsing=CPM -b $< -o $@ --numberOfProcessors=$(NCPUS)
 %.norm.bw: %.bam %.bam.bai
-	bamCoverage --binSize=$(BIGWIG_BIN_SIZE) --normalizeUsing=CPM -b $< -o $@ --numberOfProcessors=$(CORES)
+	bamCoverage --binSize=$(BIGWIG_BIN_SIZE) --normalizeUsing=CPM -b $< -o $@ --numberOfProcessors=$(NCPUS)
 
 %.fa.gz: %.fastq.gz
 	zcat $< | fastq2tab | enumerate_rows | cut -f 1,3 | tab2fasta -s | gzip >$@
  
  %.cram: %.bam
-	samtools view -@ $(CORES) -T $(REFERENCE_GENOME_FASTA) -C -o $@ $<
+	samtools view -@ $(NCPUS) -T $(REFERENCE_GENOME_FASTA) -C -o $@ $<
 
 ######################
 #
 #   RNA-seq
 #
 
-ifeq ($(PAIRED_END),N)
+ifeq ($(NGS_LIBRARY_PROPERTY_PAIRED),N)
+
 %.trimmed.fastq.gz: %.fastq.gz
   docker run -u `id -u`:$(DOCKER_GRP) --rm -v $(BIOINFO_ROOT):$(BIOINFO_ROOT) -v $(PRJ_ROOT):$(PRJ_ROOT) -v $(SCRATCH):$(SCRATCH) quay.io/biocontainers/trim-galore:0.6.5--0 bash -c "cd $(PWD); trim_galore -j $(NCPUS) $< -o `dirname $@` $(TRIM_GALORE_PARAM); mv `dirname $@`/$*_trimmed.fq.gz `dirname $@`/$*.trimmed.fastq.gz";\
+
 else
+
 %_R1.trimmed.fastq.gz: %_R1.fastq.gz %_R2.fastq.gz
 	CMD="\
 		cd $(PWD); trim_galore --paired -j $(NCPUS) $^ -o `dirname $@` $(TRIM_GALORE_PARAM);\
@@ -112,14 +116,14 @@ endif
 
 
 %_fastqc.html: %.fastq.gz
-	docker run -u `id -u`:`id -g` --rm -v $(DOCKER_DATA_DIR):$(DOCKER_DATA_DIR) -v $(SCRATCH):$(SCRATCH) biocontainers/fastqc:v0.11.5_cv3  bash -c "cd $(PWD); fastqc -o `dirname $@` -t $(CORES) $<"
+	docker run -u `id -u`:`id -g` --rm -v $(DOCKER_DATA_DIR):$(DOCKER_DATA_DIR) -v $(SCRATCH):$(SCRATCH) biocontainers/fastqc:v0.11.5_cv3  bash -c "cd $(PWD); fastqc -o `dirname $@` -t $(NCPUS) $<"
 
 %.trimmed.fastq.gz: %.fastq.gz
 	docker run -u `id -u`:`id -g` --rm -v $(DOCKER_DATA_DIR):$(DOCKER_DATA_DIR) -v $(PRJ_ROOT):$(PRJ_ROOT) quay.io/biocontainers/trim-galore:0.6.5--0  bash -c "cd $(PWD); trim_galore -j 6 $< -o . $(TRIM_GALORE_PARAM); mv $*_trimmed.fq.gz $@"
 
 
 %.bam.featurecounts.count: $(REFERENCE_FEATURECOUNTS_GTF) %.bam
-	featureCounts -o $@ -a $< $(FEATURECOUNTS_PARAM) --tmpDir $(TMP_DIR) -T $(CORES) $^2
+	featureCounts -o $@ -a $< $(FEATURECOUNTS_PARAM) --tmpDir $(TMP_DIR) -T $(NCPUS) $^2
 
 %.read_distribution.txt: %.bam $(REFERENCE_RSEQC_HOUSEKEEPING_BED)
 	read_distribution.py  -i $< -r $^2 > $@
@@ -153,11 +157,11 @@ rseqc/%.inner_distance.txt: STAR/%.STAR/Aligned.sortedByCoord.out.bam
 %.uniq_map.bam.read_count: %.bam
 	samtools view    -F 260 $< | bawk '$$1~/^@/ || $$12=="NH:i:1"' \      
 	| cut -f -1 | count > $@ 
-  #-F 260  only output reads that are not unmapped (flag 4 is not set) and only primary alignment (flag 256 is not set) http://www.metagenomics.wiki/tools/samtools/number-of-reads-in-bam-file*
+	#-F 260  only output reads that are not unmapped (flag 4 is not set) and only primary alignment (flag 256 is not set) http://www.metagenomics.wiki/tools/samtools/number-of-reads-in-bam-file*
 %.multi_map.bam.read_count: %.bam
 	samtools view    -F 4  $< | bawk '$$1~/^@/ || $$12!="NH:i:1"' \
 	| cut -f -1 | count > $@
-  #*-F 4 only output reads that not unmapped (flag 4 is not set)*
+	#*-F 4 only output reads that not unmapped (flag 4 is not set)*
 %.unmap.bam: %.bam
 	samtools view -f 4 $< -b > $@
   
@@ -168,17 +172,17 @@ rseqc/%.inner_distance.txt: STAR/%.STAR/Aligned.sortedByCoord.out.bam
 
 %.megablast-NT.gz: %.fa.gz
 	export BLASTDB=$(BLASTDB);\
-	blastn -task megablast -word_size 16 -evalue 0.01 -query <(zcat $<) -num_threads $(CORES) -db nt -lcase_masking \
+	blastn -task megablast -word_size 16 -evalue 0.01 -query <(zcat $<) -num_threads $(NCPUS) -db nt -lcase_masking \
 		-outfmt '6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore staxids sscinames sskingdoms' \
 	| gzip > $@
 %.dc_megablast-NT.gz: %.fa.gz
 	export BLASTDB=$(BLASTDB);\
-	blastn -task dc_megablast -evalue 0.01 -query <(zcat $<) -num_threads $(CORES) -db nt \
+	blastn -task dc_megablast -evalue 0.01 -query <(zcat $<) -num_threads $(NCPUS) -db nt \
 		-outfmt '6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore staxids sscinames sskingdoms' \
 	| gzip > $@
 %.blastn-NT.gz: %.fa.gz
 	export BLASTDB=$(BLASTDB);\
-	blastn -task blastn -evalue 0.01 -query <(zcat $<) -num_threads $(CORES) -db nt  \
+	blastn -task blastn -evalue 0.01 -query <(zcat $<) -num_threads $(NCPUS) -db nt  \
 		-outfmt '6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore staxids sscinames sskingdoms' \
 	| gzip > $@
 
